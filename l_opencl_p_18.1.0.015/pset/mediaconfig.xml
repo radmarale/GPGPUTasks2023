@@ -1,0 +1,50 @@
+<MediaConfig>
+    <Name>${SUITE_NAME}</Name>
+    <Description/>
+    <GUID>1557225257038</GUID>
+    <Env/>
+    <Product platform="INTEL64" id="1">
+        <Name>${opencl_rt_product_name}</Name>
+        <Description>${opencl_rt_product_description}</Description>
+        <Layers>
+            <phonehome>
+                <HideActivateButton>0</HideActivateButton>
+                <HideOnLicenseTab>0</HideOnLicenseTab>
+            </phonehome>
+        </Layers>
+        <Component platform="INTEL64" invisible="0" id="1" depend="" mandatory="0" core="1">
+            <Name>${opencl_rt_component_name}</Name>
+            <Description>${opencl_rt_component_description}</Description>
+            <Selected>1</Selected>
+            <Layers>
+                <phonehome>
+                    <HideActivateButton>0</HideActivateButton>
+                    <HideOnLicenseTab>0</HideOnLicenseTab>
+                </phonehome>
+            </Layers>
+            <RPMProductFamily>intel-openclrt</RPMProductFamily>
+            <RPMProductCode>intel-openclrt-18.1.0.015</RPMProductCode>
+            <Version>18.1.0</Version>
+            <RPMProductRelease>015</RPMProductRelease>
+            <RPMProductArch>x86_64</RPMProductArch>
+            <NONRPMProductCode>intel-openclrt-18.1.0.015-18.1.0-015.x86_64.rpm</NONRPMProductCode>
+            <Abbr>intel-openclrt__x86_64</Abbr>
+            <RPMFileDir>${PACKAGE_DIR}/rpm</RPMFileDir>
+            <Data>307</Data>
+            <Type>rpm</Type>
+        </Component>
+        <Component platform="INTEL64" invisible="1" id="3" mandatory="1">
+            <Name>Uninstaller</Name>
+            <Description>Uninstaller</Description>
+            <RPMFileDir>${PACKAGE_DIR}/rpm</RPMFileDir>
+            <Version>18.1.0</Version>
+            <RPMProductRelease>015</RPMProductRelease>
+            <Selected>1</Selected>
+            <NONRPMProductCode>intel-openclrt-pset-18.1.0.015-18.1.0-015.noarch.rpm</NONRPMProductCode>
+            <Type>rpm</Type>
+            <RPMProductCode>intel-openclrt-pset-18.1.0.015</RPMProductCode>
+            <Abbr>intel-openclrt-pset</Abbr>
+            <Data>48</Data>
+        </Component>
+    </Product>
+</MediaConfig>
