@@ -30,4 +30,8 @@ jobs:
 
     - name: aplusb
       working-directory: ${{github.workspace}}
+<<<<<<< HEAD
       run: ./build/enumDevices
+=======
+      run: ./build/aplusb
+>>>>>>> 493f393a687ba51e7be636907f5030f5f2663ad2
