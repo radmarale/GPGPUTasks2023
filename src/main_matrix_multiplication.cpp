@@ -11,6 +11,25 @@
 #include <stdexcept>
 
 
+void check_correctness(const std::vector<float>& res, const std::vector<float>& correct, unsigned int M, unsigned int N) {
+    // Проверяем корректность результатов
+    double diff_sum = 0;
+    for (int i = 0; i < M * N; ++i) {
+        double a = res[i];
+        double b = correct[i];
+        if (a != 0.0 || b != 0.0) {
+            double diff = fabs(a - b) / std::max(fabs(a), fabs(b));
+            diff_sum += diff;
+        }
+    }
+
+    double diff_avg = diff_sum / (M * N);
+    std::cout << "Average difference: " << diff_avg * 100.0 << "%" << std::endl;
+    if (diff_avg > 0.01) {
+        std::cerr << "Too big difference!" << std::endl;
+    }
+}
+
 int main(int argc, char **argv)
 {
     gpu::Device device = gpu::chooseGPUDevice(argc, argv);
@@ -58,7 +77,7 @@ int main(int argc, char **argv)
 
     const std::vector<float> cs_cpu_reference = cs;
 
-    /*
+    
     gpu::gpu_mem_32f as_gpu, bs_gpu, cs_gpu;
     as_gpu.resizeN(M*K);
     bs_gpu.resizeN(K*N);
@@ -67,43 +86,38 @@ int main(int argc, char **argv)
     as_gpu.writeN(as.data(), M*K);
     bs_gpu.writeN(bs.data(), K*N);
 
-    ocl::Kernel matrix_multiplication_kernel(matrix_multiplication, matrix_multiplication_length, "matrix_multiplication");
-    matrix_multiplication_kernel.compile();
+    bool print_log = true;
 
-    {
+    unsigned int TILE_SIZE = 16;
+    unsigned int THREAD_WORK = 4;
+
+    for (std::string kernel_name : { "global_mem", "local_mem", "more_work_per_thread" }) {
+        ocl::Kernel matrix_multiplication_kernel(matrix_multiplication, matrix_multiplication_length, "matrix_multiplication_" + kernel_name);
+        matrix_multiplication_kernel.compile(print_log);
+
+        std::vector<unsigned int> work_group_size({ TILE_SIZE, TILE_SIZE });
+        if (kernel_name == "more_work_per_thread") {
+            work_group_size = { TILE_SIZE / THREAD_WORK, TILE_SIZE };
+        }
+        std::vector<unsigned int> global_work_size({ (M + work_group_size[0] - 1) / work_group_size[0] * work_group_size[0],
+                                                 (N + work_group_size[1] - 1) / work_group_size[1] * work_group_size[1] });
+
         timer t;
         for (int iter = 0; iter < benchmarkingIters; ++iter) {
-            // TODO
-            unsigned int work_group_size = 128;
-            unsigned int global_work_size = ...;
-            matrix_multiplication_kernel.exec(gpu::WorkSize(work_group_size, global_work_size), as_gpu, bs_gpu, cs_gpu, M, K, N);
+            
+            matrix_multiplication_kernel.exec(gpu::WorkSize(work_group_size[0], work_group_size[1],
+                                                            global_work_size[0], global_work_size[1]),
+                                              as_gpu, bs_gpu, cs_gpu, M, K, N);
 
             t.nextLap();
         }
-        std::cout << "GPU: " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
-        std::cout << "GPU: " << gflops / t.lapAvg() << " GFlops" << std::endl;
+        cs_gpu.readN(cs.data(), M*N);
+        check_correctness(cs, cs_cpu_reference, M, N);
+
+        std::cout << "GPU (" << kernel_name << "): " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
+        std::cout << "GPU (" << kernel_name << "): " << gflops / t.lapAvg() << " GFlops" << std::endl;
     }
 
-    cs_gpu.readN(cs.data(), M*N);
-    */
-
-    // Проверяем корректность результатов
-    double diff_sum = 0;
-    for (int i = 0; i < M * N; ++i) {
-        double a = cs[i];
-        double b = cs_cpu_reference[i];
-        if (a != 0.0 || b != 0.0) {
-            double diff = fabs(a - b) / std::max(fabs(a), fabs(b));
-            diff_sum += diff;
-        }
-    }
-
-    double diff_avg = diff_sum / (M * N);
-    std::cout << "Average difference: " << diff_avg * 100.0 << "%" << std::endl;
-    if (diff_avg > 0.01) {
-        std::cerr << "Too big difference!" << std::endl;
-        return 1;
-    }
 
     return 0;
 }
