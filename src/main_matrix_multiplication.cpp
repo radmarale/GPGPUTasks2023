@@ -86,7 +86,7 @@ int main(int argc, char **argv)
     as_gpu.writeN(as.data(), M*K);
     bs_gpu.writeN(bs.data(), K*N);
 
-    bool print_log = true;
+    bool print_log = false;
 
     unsigned int TILE_SIZE = 16;
     unsigned int THREAD_WORK = 4;
