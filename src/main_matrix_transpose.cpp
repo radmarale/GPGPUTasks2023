@@ -32,7 +32,7 @@ int main(int argc, char **argv)
     }
     std::cout << "Data generated for M=" << M << ", K=" << K << std::endl;
 
-    /*
+    
     gpu::gpu_mem_32f as_gpu, as_t_gpu;
     as_gpu.resizeN(M*K);
     as_t_gpu.resizeN(K*M);
@@ -40,20 +40,23 @@ int main(int argc, char **argv)
     as_gpu.writeN(as.data(), M*K);
 
     ocl::Kernel matrix_transpose_kernel(matrix_transpose, matrix_transpose_length, "matrix_transpose");
-    matrix_transpose_kernel.compile();
+    bool print_log = false;
+    matrix_transpose_kernel.compile(print_log);
 
     {
         timer t;
         for (int iter = 0; iter < benchmarkingIters; ++iter) {
-            // TODO
-            unsigned int work_group_size = 128;
-            unsigned int global_work_size = ...;
+            std::vector<unsigned int> work_group_size({ 16, 16 });
+            std::vector<unsigned int> global_work_size({ (M + work_group_size[0] - 1) / work_group_size[0] * work_group_size[0],
+                                                         (K + work_group_size[1] - 1) / work_group_size[1] * work_group_size[1] });
             // Для этой задачи естественнее использовать двухмерный NDRange. Чтобы это сформулировать
             // в терминологии библиотеки - нужно вызвать другую вариацию конструктора WorkSize.
             // В CLion удобно смотреть какие есть вариант аргументов в конструкторах:
             // поставьте каретку редактирования кода внутри скобок конструктора WorkSize -> Ctrl+P -> заметьте что есть 2, 4 и 6 параметров
             // - для 1D, 2D и 3D рабочего пространства соответственно
-            matrix_transpose_kernel.exec(gpu::WorkSize(work_group_size, global_work_size), as_gpu, as_t_gpu, M, K);
+            matrix_transpose_kernel.exec(gpu::WorkSize(work_group_size[0], work_group_size[1],
+                                                       global_work_size[0], global_work_size[1]),
+                                        as_gpu, as_t_gpu, M, K);
 
             t.nextLap();
         }
@@ -69,12 +72,13 @@ int main(int argc, char **argv)
             float a = as[j * K + i];
             float b = as_t[i * M + j];
             if (a != b) {
+                std::cerr << "Failed on i=" << j << ", j=" << i << ":\n";
                 std::cerr << "Not the same!" << std::endl;
+                std::cerr << "a=" << a << ", b=" << b << '\n';
                 return 1;
             }
         }
     }
-    */
 
     return 0;
 }

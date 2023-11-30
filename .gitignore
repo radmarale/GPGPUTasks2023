@@ -2,4 +2,5 @@
 .idea
 build
 cmake-build*
-.vs
+.vscode
+GraphicsMagick-1.3.42
