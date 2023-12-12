@@ -22,6 +22,12 @@ void raiseFail(const T &a, const T &b, std::string message, std::string filename
 
 int main(int argc, char **argv)
 {
+	gpu::Device device = gpu::chooseGPUDevice(argc, argv);
+
+	gpu::Context context;
+	context.init(device.device_id_opencl);
+	context.activate();
+
 	int benchmarkingIters = 10;
 	unsigned int max_n = (1 << 24);
 
@@ -77,7 +83,47 @@ int main(int argc, char **argv)
 		}
 
 		{
-			// TODO: implement on OpenCL
+			gpu::gpu_mem_32u as_gpu;
+			as_gpu.resizeN(n);
+			ocl::Kernel prefix_sum(prefix_sum_kernel, prefix_sum_kernel_length, "prefix_sum");
+			prefix_sum.compile();
+			unsigned int work_group_size = 256;
+			int logN = 0;
+			while (1 << logN < n) {
+				++logN;
+			}
+
+			timer t;
+			std::reverse(as.begin(), as.end());
+			for (int iter = 0; iter < benchmarkingIters; ++iter) {
+				as_gpu.writeN(as.data(), n);
+				t.restart();
+				for (int loglength = 1; loglength <= logN; ++loglength) {
+					int global_work_size = n / (1 << loglength);
+					global_work_size = (global_work_size + work_group_size - 1) / work_group_size * work_group_size;
+					prefix_sum.exec(gpu::WorkSize(work_group_size, global_work_size), as_gpu, n, loglength, 0);
+				}
+				for (int loglength = logN; loglength > 0; --loglength) {
+					int global_work_size = n / (1 << loglength);
+					global_work_size = (global_work_size + work_group_size - 1) / work_group_size * work_group_size;
+					prefix_sum.exec(gpu::WorkSize(work_group_size, global_work_size), as_gpu, n, loglength, 1);
+				}
+				t.nextLap();
+			}
+
+			std::cout << "GPU: " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
+			std::cout << "GPU: " << (n / 1000.0 / 1000.0) / t.lapAvg() << " millions/s" << std::endl;
+			
+			as_gpu.readN(as.data(), n);
+			std::reverse(as.begin(), as.end());
+			for (int i = 0; i < n; ++i) {
+				try {
+					EXPECT_THE_SAME(reference_result[i], as[i], "GPU result should be consistent!");
+				} catch(...) {
+					std::cout << "index: " << i << '\n';
+					throw;
+				}
+			}			
 		}
 	}
 }

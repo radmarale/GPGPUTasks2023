@@ -32,6 +32,7 @@ int main(int argc, char **argv) {
 
     int benchmarkingIters = 10;
     unsigned int n = 32 * 1024 * 1024;
+    //unsigned int n = 32 * 256 * 256;
     std::vector<float> as(n, 0);
     FastRandom r(n);
     for (unsigned int i = 0; i < n; ++i) {
@@ -50,10 +51,11 @@ int main(int argc, char **argv) {
         std::cout << "CPU: " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
         std::cout << "CPU: " << (n / 1000 / 1000) / t.lapAvg() << " millions/s" << std::endl;
     }
-    /*
+    
     gpu::gpu_mem_32f as_gpu;
     as_gpu.resizeN(n);
-
+    unsigned int work_group_size = 256;
+    unsigned int global_work_size = (n / 2 + work_group_size - 1) / work_group_size * work_group_size;
     {
         ocl::Kernel bitonic(bitonic_kernel, bitonic_kernel_length, "bitonic");
         bitonic.compile();
@@ -62,9 +64,14 @@ int main(int argc, char **argv) {
         for (int iter = 0; iter < benchmarkingIters; ++iter) {
             as_gpu.writeN(as.data(), n);
 
-            t.restart();// Запускаем секундомер после прогрузки данных, чтобы замерять время работы кернела, а не трансфер данных
-
-            // TODO
+            t.restart(); // Запускаем секундомер после прогрузки данных, чтобы замерять время работы кернела, а не трансфер данных
+            for (int step = 1; (1 << step) <= n; ++step) {
+                for (int loglength = step - 1; loglength >= 0; --loglength) {
+                    bitonic.exec(gpu::WorkSize(work_group_size, global_work_size), as_gpu, n, step,
+                                 loglength);
+                }
+            }
+            t.nextLap();
         }
         std::cout << "GPU: " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
         std::cout << "GPU: " << (n / 1000 / 1000) / t.lapAvg() << " millions/s" << std::endl;
@@ -74,8 +81,13 @@ int main(int argc, char **argv) {
 
     // Проверяем корректность результатов
     for (int i = 0; i < n; ++i) {
-        EXPECT_THE_SAME(as[i], cpu_sorted[i], "GPU results should be equal to CPU results!");
+        try {
+            EXPECT_THE_SAME(as[i], cpu_sorted[i], "GPU results should be equal to CPU results!");
+        } catch(...) {
+            std::cout << "Index: " << i << '\n';
+            throw;
+        }
     }
-*/
+
     return 0;
 }
