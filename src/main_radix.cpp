@@ -31,7 +31,8 @@ int main(int argc, char **argv) {
     context.activate();
 
     int benchmarkingIters = 10;
-    unsigned int n = 32 * 1024 * 1024;
+    //unsigned int n = 32 * 1024 * 1024;
+    unsigned int n = 32 * 128 * 128;
     std::vector<unsigned int> as(n, 0);
     FastRandom r(n);
     for (unsigned int i = 0; i < n; ++i) {
@@ -50,21 +51,61 @@ int main(int argc, char **argv) {
         std::cout << "CPU: " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
         std::cout << "CPU: " << (n / 1000 / 1000) / t.lapAvg() << " millions/s" << std::endl;
     }
-    /*
+    
     gpu::gpu_mem_32u as_gpu;
-    as_gpu.resizeN(n);
+    as_gpu.resizeN(n);-
 
     {
+        int work_group_size = 256;
+        int global_work_size = (n + work_group_size - 1) / work_group_size * work_group_size;
+        int number_of_bits = 4;
+        int size_of_number = 32;
+        int counters_N = global_work_size / work_group_size;
+        int counters_M = 1 << number_of_bits;
+        gpu::gpu_mem_32u counters, countersT;
+        counters.resizeN(counters_N * counters_M, 0);
+        countersT.resizeN(counters_N * counters_M);
+        int transpose_work_group_size = 16;
+        std::pair<int, int> transpose_global_work_size =
+            { (counters_N + transpose_work_group_size - 1) / transpose_work_group_size * transpose_work_group_size,
+              (counters_M + transpose_work_group_size - 1) / transpose_work_group_size * transpose_work_group_size };
+
         ocl::Kernel radix(radix_kernel, radix_kernel_length, "radix");
         radix.compile();
+        ocl::Kernel fill_counters(radix_kernel, radix_kernel_length, "fill_counters");
+        fill_counters.compile();
+        ocl::Kernel transpose(radix_kernel, radix_kernel_length, "matrix_transpose");
+        transpose.compile();
+        ocl::Kernel prefix_sum(radix_kernel, radix_kernel_length, "prefix_sum");
+        prefix_sum.compile();
+        ocl::Kernel merge(radix_kernel, radix_kernel_length, "merge");
+        merge.compile();
+        
 
         timer t;
         for (int iter = 0; iter < benchmarkingIters; ++iter) {
             as_gpu.writeN(as.data(), n);
 
-            t.restart();// Запускаем секундомер после прогрузки данных, чтобы замерять время работы кернела, а не трансфер данных
-
-            // TODO
+            t.restart();
+            for (int step = 0; step * number_of_bits < size_of_number; ++step) {
+                fill_counters.exec(gpu::WorkSize(work_group_size, global_work_size),
+                                  as, counters, step, number_of_bits);
+                transpose.exec(gpu::WorkSize(transpose_work_group_size, transpose_work_group_size,
+                                             transpose_global_work_size.first, transpose_work_group_size.second),
+                               counters, countersT, counters_N, counters_M);
+                std::reverse(countersT.begin(), countersT.end());
+				for (int loglength = 1; loglength <= logN; ++loglength) {
+					int global_work_size = n / (1 << loglength);
+					global_work_size = (global_work_size + work_group_size - 1) / work_group_size * work_group_size;
+					prefix_sum.exec(gpu::WorkSize(work_group_size, global_work_size), as_gpu, n, loglength, 0);
+				}
+				for (int loglength = logN; loglength > 0; --loglength) {
+					int global_work_size = n / (1 << loglength);
+					global_work_size = (global_work_size + work_group_size - 1) / work_group_size * work_group_size;
+					prefix_sum.exec(gpu::WorkSize(work_group_size, global_work_size), as_gpu, n, loglength, 1);
+				}
+            }
+            t.nextLap();
         }
         std::cout << "GPU: " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
         std::cout << "GPU: " << (n / 1000 / 1000) / t.lapAvg() << " millions/s" << std::endl;
@@ -76,6 +117,6 @@ int main(int argc, char **argv) {
     for (int i = 0; i < n; ++i) {
         EXPECT_THE_SAME(as[i], cpu_sorted[i], "GPU results should be equal to CPU results!");
     }
-*/
+
     return 0;
 }
