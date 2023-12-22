@@ -114,7 +114,7 @@ __kernel void prefix_sum_on_many_segments(__global unsigned int* as,
 }
 
 
-__kernel void merge(__global const unsigned int* a,
+__kernel void merge_using_bits(__global const unsigned int* a,
                     __global unsigned int* res,
                     unsigned int length,
                     unsigned int step,

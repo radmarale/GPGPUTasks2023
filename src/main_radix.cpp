@@ -37,7 +37,7 @@ int main(int argc, char **argv) {
 
     int benchmarkingIters = 10;
     unsigned int n = 32 * 1024 * 1024;
-    //unsigned int n = 32 * 128 * 128;
+    //unsigned int n = 32 * 512 * 512;
     std::vector<unsigned int> as(n, 0);
     FastRandom r(n);
     for (unsigned int i = 0; i < n; ++i) {
@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
         transpose.compile();
         ocl::Kernel prefix_sum(radix_kernel, radix_kernel_length, "prefix_sum");
         prefix_sum.compile();
-        ocl::Kernel merge(radix_kernel, radix_kernel_length, "merge");
+        ocl::Kernel merge(radix_kernel, radix_kernel_length, "merge_using_bits");
         merge.compile();
         ocl::Kernel prefix_sum_on_many_segments(radix_kernel, radix_kernel_length, "prefix_sum_on_many_segments");
         prefix_sum_on_many_segments.compile();
@@ -151,50 +151,10 @@ int main(int argc, char **argv) {
             }
             t.nextLap();
         }
-        std::cout << "GPU (radix): " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
-        std::cout << "GPU (radix): " << (n / 1000 / 1000) / t.lapAvg() << " millions/s" << std::endl;
+        std::cout << "GPU: " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
+        std::cout << "GPU: " << (n / 1000 / 1000) / t.lapAvg() << " millions/s" << std::endl;
 
         as_gpu.readN(as.data(), n);
-    }
-
-    // Проверяем корректность результатов
-    for (int i = 0; i < n; ++i) {
-        EXPECT_THE_SAME(as[i], cpu_sorted[i], "GPU results should be equal to CPU results!");
-    }
-
-    {
-        ocl::Kernel bitonic(bitonic_kernel, bitonic_kernel_length, "bitonic");
-        bitonic.compile();
-
-        int work_group_size = 256;
-        int global_work_size = (n + work_group_size - 1) / work_group_size * work_group_size;
-
-        timer t;
-        for (int iter = 0; iter < benchmarkingIters; ++iter) {
-            as_gpu.writeN(as.data(), n);
-
-            t.restart(); // Запускаем секундомер после прогрузки данных, чтобы замерять время работы кернела, а не трансфер данных
-            for (int step = 1; (1 << step) <= n; ++step) {
-                for (int loglength = step - 1; loglength >= 0; --loglength) {
-                    bitonic.exec(gpu::WorkSize(work_group_size, global_work_size), as_gpu, n, step,
-                                 loglength);
-                }
-            }
-            t.nextLap();
-        }
-        std::cout << "GPU (bitonic): " << t.lapAvg() << "+-" << t.lapStd() << " s" << std::endl;
-        std::cout << "GPU (bitonic): " << (n / 1000 / 1000) / t.lapAvg() << " millions/s" << std::endl;
-
-        as_gpu.readN(as.data(), n);
-    }
-
-    // Проверяем корректность результатов
-    for (int i = 0; i < n; ++i) {
-        EXPECT_THE_SAME(as[i], cpu_sorted[i], "GPU results should be equal to CPU results!");
-    }
-
-    {
-        
     }
 
     // Проверяем корректность результатов
