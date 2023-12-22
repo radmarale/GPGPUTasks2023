@@ -10,6 +10,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <vector>
+#include <cassert>
 
 
 template<typename T>
@@ -22,6 +23,10 @@ void raiseFail(const T &a, const T &b, std::string message, std::string filename
 
 #define EXPECT_THE_SAME(a, b, message) raiseFail(a, b, message, __FILE__, __LINE__)
 
+unsigned int get_bits(unsigned int x, int step, int number_of_bits) {
+    return (x >> (step * number_of_bits)) & ((1 << number_of_bits) - 1) ;
+}
+
 
 int main(int argc, char **argv) {
     gpu::Device device = gpu::chooseGPUDevice(argc, argv);
@@ -31,8 +36,8 @@ int main(int argc, char **argv) {
     context.activate();
 
     int benchmarkingIters = 10;
-    //unsigned int n = 32 * 1024 * 1024;
-    unsigned int n = 32 * 128 * 128;
+    unsigned int n = 32 * 1024 * 1024;
+    //unsigned int n = 32 * 128 * 128;
     std::vector<unsigned int> as(n, 0);
     FastRandom r(n);
     for (unsigned int i = 0; i < n; ++i) {
@@ -53,9 +58,12 @@ int main(int argc, char **argv) {
     }
     
     gpu::gpu_mem_32u as_gpu;
-    as_gpu.resizeN(n);-
+    as_gpu.resizeN(n);
 
     {
+        gpu::gpu_mem_32u res_gpu;
+        res_gpu.resizeN(n);
+
         int work_group_size = 256;
         int global_work_size = (n + work_group_size - 1) / work_group_size * work_group_size;
         int number_of_bits = 4;
@@ -63,15 +71,22 @@ int main(int argc, char **argv) {
         int counters_N = global_work_size / work_group_size;
         int counters_M = 1 << number_of_bits;
         gpu::gpu_mem_32u counters, countersT;
-        counters.resizeN(counters_N * counters_M, 0);
+        counters.resizeN(counters_N * counters_M);
         countersT.resizeN(counters_N * counters_M);
         int transpose_work_group_size = 16;
         std::pair<int, int> transpose_global_work_size =
             { (counters_N + transpose_work_group_size - 1) / transpose_work_group_size * transpose_work_group_size,
               (counters_M + transpose_work_group_size - 1) / transpose_work_group_size * transpose_work_group_size };
+        int fill_zeros_global_work_size = (counters_N * counters_M + work_group_size - 1) / work_group_size * work_group_size;
 
+        int log_NM = 0;
+        while ((1 << log_NM) < counters_N * counters_M) {
+            ++log_NM;
+        }
         ocl::Kernel radix(radix_kernel, radix_kernel_length, "radix");
         radix.compile();
+        ocl::Kernel fill_with_zeros(radix_kernel, radix_kernel_length, "fill_with_zeros");
+        fill_with_zeros.compile();
         ocl::Kernel fill_counters(radix_kernel, radix_kernel_length, "fill_counters");
         fill_counters.compile();
         ocl::Kernel transpose(radix_kernel, radix_kernel_length, "matrix_transpose");
@@ -80,30 +95,58 @@ int main(int argc, char **argv) {
         prefix_sum.compile();
         ocl::Kernel merge(radix_kernel, radix_kernel_length, "merge");
         merge.compile();
+        ocl::Kernel prefix_sum_on_many_segments(radix_kernel, radix_kernel_length, "prefix_sum_on_many_segments");
+        prefix_sum_on_many_segments.compile();
         
-
         timer t;
         for (int iter = 0; iter < benchmarkingIters; ++iter) {
             as_gpu.writeN(as.data(), n);
 
             t.restart();
             for (int step = 0; step * number_of_bits < size_of_number; ++step) {
+                for (unsigned int length = 1; length * 2 <= work_group_size; length <<= 1) {
+                    merge.exec(gpu::WorkSize(work_group_size, global_work_size), as_gpu, res_gpu, length, step, number_of_bits);
+                    std::swap(as_gpu, res_gpu);
+                }
+
+                fill_with_zeros.exec(gpu::WorkSize(work_group_size, fill_zeros_global_work_size),
+                                     counters, counters_N * counters_M);
                 fill_counters.exec(gpu::WorkSize(work_group_size, global_work_size),
-                                  as, counters, step, number_of_bits);
+                                  as_gpu, counters, step, number_of_bits);
+
+                
                 transpose.exec(gpu::WorkSize(transpose_work_group_size, transpose_work_group_size,
-                                             transpose_global_work_size.first, transpose_work_group_size.second),
+                                             transpose_global_work_size.first, transpose_global_work_size.second),
                                counters, countersT, counters_N, counters_M);
-                std::reverse(countersT.begin(), countersT.end());
-				for (int loglength = 1; loglength <= logN; ++loglength) {
-					int global_work_size = n / (1 << loglength);
+				for (int loglength = 1; loglength <= log_NM; ++loglength) {
+					int global_work_size = counters_N * counters_M / (1 << loglength);
 					global_work_size = (global_work_size + work_group_size - 1) / work_group_size * work_group_size;
-					prefix_sum.exec(gpu::WorkSize(work_group_size, global_work_size), as_gpu, n, loglength, 0);
+					prefix_sum.exec(gpu::WorkSize(work_group_size, global_work_size), countersT, counters_N * counters_M, loglength, 0);
 				}
-				for (int loglength = logN; loglength > 0; --loglength) {
-					int global_work_size = n / (1 << loglength);
+				for (int loglength = log_NM; loglength > 0; --loglength) {
+					int global_work_size = counters_N * counters_M / (1 << loglength);
 					global_work_size = (global_work_size + work_group_size - 1) / work_group_size * work_group_size;
-					prefix_sum.exec(gpu::WorkSize(work_group_size, global_work_size), as_gpu, n, loglength, 1);
+					prefix_sum.exec(gpu::WorkSize(work_group_size, global_work_size), countersT, counters_N * counters_M, loglength, 1);
 				}
+
+                for (int loglength = 1; loglength <= number_of_bits; ++loglength) {
+					int global_work_size = counters_N * counters_M / (1 << loglength);
+					global_work_size = (global_work_size + work_group_size - 1) / work_group_size * work_group_size;
+					prefix_sum_on_many_segments.exec(gpu::WorkSize(work_group_size, global_work_size),
+                                                     counters, counters_N * counters_M, loglength,
+                                                     (1 << number_of_bits), 0);
+				}
+				for (int loglength = number_of_bits; loglength > 0; --loglength) {
+					int global_work_size = counters_N * counters_M / (1 << loglength);
+					global_work_size = (global_work_size + work_group_size - 1) / work_group_size * work_group_size;
+					prefix_sum_on_many_segments.exec(gpu::WorkSize(work_group_size, global_work_size),
+                                                     counters, counters_N * counters_M, loglength,
+                                                     (1 << number_of_bits), 1);
+				}
+
+                radix.exec(gpu::WorkSize(work_group_size, global_work_size),
+                           as_gpu, countersT, counters, res_gpu, step, number_of_bits);
+                std::swap(as_gpu, res_gpu);
             }
             t.nextLap();
         }
