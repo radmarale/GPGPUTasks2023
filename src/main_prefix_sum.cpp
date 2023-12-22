@@ -94,7 +94,6 @@ int main(int argc, char **argv)
 			}
 
 			timer t;
-			std::reverse(as.begin(), as.end());
 			for (int iter = 0; iter < benchmarkingIters; ++iter) {
 				as_gpu.writeN(as.data(), n);
 				t.restart();
@@ -115,7 +114,6 @@ int main(int argc, char **argv)
 			std::cout << "GPU: " << (n / 1000.0 / 1000.0) / t.lapAvg() << " millions/s" << std::endl;
 			
 			as_gpu.readN(as.data(), n);
-			std::reverse(as.begin(), as.end());
 			for (int i = 0; i < n; ++i) {
 				try {
 					EXPECT_THE_SAME(reference_result[i], as[i], "GPU result should be consistent!");

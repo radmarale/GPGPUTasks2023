@@ -3,12 +3,12 @@ __kernel void prefix_sum(__global unsigned int* as, int n, int loglength, int st
     if (gid >= n >> loglength) {
         return;
     }
-    int as_index = gid << loglength;
+    int as_index = (gid << loglength) + (1 << loglength) - 1;
     if (stage == 0) {
-        as[as_index] += as[as_index + (1 << loglength - 1)];
+        as[as_index] += as[as_index - (1 << loglength - 1)];
     } else {
-        if (as_index > 0) {
-            as[as_index - (1 << loglength - 1)] += as[as_index];
+        if (as_index + 1 < n) {
+            as[as_index + (1 << loglength - 1)] += as[as_index];
         }
     }
 }
